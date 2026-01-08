@@ -7,23 +7,37 @@ use Illuminate\Database\Eloquent\Model;
 
 class Place extends Model
 {
-    use HasFactory ;
-     protected $fillable = [
-        'name','description','price_per_hour',
-        'image','amenities','address','lat','lng'
+    use HasFactory;
+
+    protected $fillable = [
+        'name', 'description', 'price_per_hour',
+        'image', 'amenities', 'address', 'lat', 'lng'
+    ];
+
+   
+    protected $casts = [
+        'amenities' => 'array',
+        'lat' => 'float',       
+        'lng' => 'float',      
+        'price_per_hour' => 'integer',
     ];
 
     public function getImageUrlAttribute()
-{
-    return $this->image ? asset('storage/' . $this->image) : null;
-}
+    {
+        if (!$this->image) {
+            return null;
+        }
 
+       
+        if (str_starts_with($this->image, 'http://') || str_starts_with($this->image, 'https://')) {
+            return $this->image;
+        }
 
-    protected $casts = [
-        'amenities' => 'array',
-    ];
+        // Local file - prepend storage path
+        return asset('storage/' . $this->image);
+    }
 
-    // دالة مساعدة للحصول على الإحداثيات كـ array
+    
     public function getCoordinatesAttribute()
     {
         return [
@@ -32,19 +46,18 @@ class Place extends Model
         ];
     }
 
-      public function parkingSpots()
+    public function parkingSpots()
     {
         return $this->hasMany(ParkingSpot::class);
     }
 
-
-    // دالة لإنشاء رابط خرائط جوجل
+   
     public function getGoogleMapsLinkAttribute()
     {
-        if ($this->google_maps_url) {
+        if ($this->google_maps_url ?? false) { 
             return $this->google_maps_url;
         }
 
-        return "https://www.google.com/maps?q={$this->lat},{$this->lng}";
+        return "https://www.google.com/maps/search/?api=1&query={$this->lat},{$this->lng}";
     }
 }

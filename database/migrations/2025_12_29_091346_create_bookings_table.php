@@ -13,13 +13,32 @@ return new class extends Migration
     {
         Schema::create('bookings', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('place_id')->constrained();
-            $table->foreignId('parking_spot_id')->constrained();
-            $table->string('vehicle_plate');
+            
+            // Foreign keys
+            $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
+            $table->foreignId('place_id')->constrained()->onDelete('cascade');
+            $table->foreignId('parking_spot_id')->constrained()->onDelete('cascade');
+            
+            // Booking details
+            $table->string('vehicle_plate', 20);
             $table->integer('duration_hours');
-            $table->integer('total_price');
-            $table->string('status')->default('active');
+            
+            // Time tracking
+            $table->dateTime('start_time');
+            $table->dateTime('end_time');
+            
+            // Payment
+            $table->decimal('total_price', 10, 2); // 10 digits total, 2 decimal places
+            $table->string('payment_method')->default('cash'); // 'card' or 'cash'
+            
+            // Status: active, reserved, completed, cancelled
+            $table->string('status', 20)->default('active');
+            
             $table->timestamps();
+            
+            // Indexes for better query performance
+            $table->index(['parking_spot_id', 'status']);
+            $table->index(['start_time', 'end_time']);
         });
     }
 

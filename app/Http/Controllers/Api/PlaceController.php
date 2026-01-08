@@ -15,34 +15,59 @@ class PlaceController extends Controller
      * GET /api/places
      */
     public function index(Request $request)
-{
-    $query = Place::with('parkingSpots');
+    {
+        // 1. تجهيز الكويري الأساسي
+        $query = Place::with('parkingSpots')
+            ->withCount([
+                'parkingSpots as available_slots_count' => function($query) {
+                    $query->where('is_available', 1);
+                },
+                'parkingSpots as total_slots_count'
+            ]);
 
-    if ($request->q) {
-        $query->where('name', 'like', "{$request->q}%");
+        // 2. البحث (Search Handling)
+        if ($request->search) {
+            $query->where(function($q) use ($request) {
+                $q->where('name', 'like', "%{$request->search}%")
+                  ->orWhere('address', 'like', "%{$request->search}%")
+                  ->orWhere('description', 'like', "%{$request->search}%");
+            });
+        }
+
+        $places = $query->get();
+
+        // 3. (Smart Fallback) لو النتايج فاضية، هات آخر 10 جراجات
+        if ($places->isEmpty()) {
+            $places = Place::with('parkingSpots')
+                ->withCount([
+                    'parkingSpots as available_slots_count' => function($query) {
+                        $query->where('is_available', 1);
+                    },
+                    'parkingSpots as total_slots_count'
+                ])
+                ->latest()
+                ->limit(10)
+                ->get();
+        }
+
+        return GarageResource::collection($places);
     }
 
-        return GarageResource::collection($query->get());
+    public function show($id)
+    {
+        $place = Place::with('parkingSpots')->find($id);
 
-}
+        if (!$place) {
+            return response()->json(['message' => 'Place not found'], 404);
+        }
 
-
-
-    public function shaw($id)
-{
-    $place = Place::with('parkingSpots')->find($id);
-
-    if (!$place) {
-        return response()->json(['message' => 'Place not found'], 404);
+        return response()->json([
+            'data' => $place
+        ]);
     }
-
-    return response()->json([
-        'data' => $place
-    ]);
-}
 
     /**
-     * البحث عن مكان بالاسم
+     * البحث عن مكان بالاسم (معدلة لتناسب الأعمدة الصحيحة)
      * GET /api/places/search?name=اسم_المكان
      */
     public function searchByName(Request $request)
@@ -54,9 +79,10 @@ class PlaceController extends Controller
 
             $name = $request->name;
 
-            $place = Place::with('parkingSpots')->where('name', 'like', "%{$name}%")
-                ->orWhere('street', 'like', "%{$name}%")
-                ->orWhere('city', 'like', "%{$name}%")
+            // تم التعديل لاستخدام address بدلاً من street/city
+            $place = Place::with('parkingSpots')
+                ->where('name', 'like', "%{$name}%")
+                ->orWhere('address', 'like', "%{$name}%")
                 ->first();
 
             if (!$place) {
@@ -82,7 +108,8 @@ class PlaceController extends Controller
                     'infoWindow' => $this->generateInfoWindowHtml($place)
                 ],
                 'directions' => [
-                    'google_maps_url' => $place->google_maps_url ?: "https://maps.google.com/?q={$place->lat},{$place->lng}"
+                    // تم إصلاح رابط جوجل مابس
+                    'google_maps_url' => "https://www.google.com/maps/search/?api=1&query={$place->lat},{$place->lng}"
                 ]
             ];
 
@@ -110,50 +137,48 @@ class PlaceController extends Controller
      * إنشاء مكان جديد
      * POST /api/places
      */
-public function store(Request $request)
-{
-    $validated = $request->validate([
-        'name' => 'required|string|max:255',
-        'description' => 'nullable|string',
-        'price_per_hour' => 'required|integer|min:0',
-        'address' => 'required|string|max:255',
-        'lat' => 'required|numeric|between:-90,90',
-        'lng' => 'required|numeric|between:-180,180',
-        'amenities' => 'nullable|array',
-        'amenities.*' => 'string',
-        'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
-    ]);
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'price_per_hour' => 'required|integer|min:0',
+            'address' => 'required|string|max:255',
+            'lat' => 'required|numeric|between:-90,90',
+            'lng' => 'required|numeric|between:-180,180',
+            'amenities' => 'nullable|array',
+            'amenities.*' => 'string',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
+        ]);
 
-    if ($request->hasFile('image')) {
-        $validated['image'] = $request->file('image')->store('places', 'public');
+        if ($request->hasFile('image')) {
+            $validated['image'] = $request->file('image')->store('places', 'public');
+        }
+
+        $place = Place::create($validated);
+
+        return response()->json([
+            'data' => $place
+        ], 201);
     }
-
-    $place = Place::create($validated);
-
-    return response()->json([
-        'data' => $place
-    ], 201);
-}
-
-
 
     /**
      * دالة مساعدة: توليد HTML لـ InfoWindow
+     * (تم تصحيح أسماء الأعمدة هنا أيضاً)
      */
     private function generateInfoWindowHtml(Place $place)
     {
+        $googleMapsUrl = "https://www.google.com/maps/search/?api=1&query={$place->lat},{$place->lng}";
+        
         $html = '
         <div style="padding: 15px; max-width: 300px; font-family: Arial, sans-serif;">
             <div style="margin-bottom: 10px;">
                 <h3 style="margin: 0 0 5px 0; color: #333; font-size: 18px;">' . htmlspecialchars($place->name) . '</h3>
                 <div style="color: #666; font-size: 14px; margin-bottom: 5px;">
-                    📍 ' . htmlspecialchars($place->street) . '
-                </div>
-                <div style="color: #666; font-size: 14px; margin-bottom: 5px;">
-                    🏙️ ' . htmlspecialchars($place->city) . ', ' . htmlspecialchars($place->country) . '
+                    📍 ' . htmlspecialchars($place->address) . '
                 </div>
                 <div style="color: #2ecc71; font-size: 16px; font-weight: bold; margin: 10px 0;">
-                    💰 $' . number_format($place->price, 2) . ' يومياً
+                    💰 $' . number_format($place->price_per_hour, 2) . ' / Hour
                 </div>
             </div>
 
@@ -164,7 +189,7 @@ public function store(Request $request)
             </div>
 
             <div style="margin-top: 15px;">
-                <a href="' . htmlspecialchars($place->google_maps_url ?: "https://maps.google.com/?q={$place->lat},{$place->lng}") . '"
+                <a href="' . $googleMapsUrl . '"
                    target="_blank"
                    style="display: inline-block; padding: 8px 15px; background: #4285f4; color: white;
                           text-decoration: none; border-radius: 4px; text-align: center; font-size: 14px;">
@@ -176,64 +201,59 @@ public function store(Request $request)
         return $html;
     }
 
-
     /**
      * تحديث مكان
      * PUT /api/places/{id}
      */
-   public function update(Request $request, $id)
-{
-    $place = Place::find($id);
+    public function update(Request $request, $id)
+    {
+        $place = Place::find($id);
 
-    if (!$place) {
-        return response()->json(['message' => 'Place not found'], 404);
-    }
-
-    $validated = $request->validate([
-        'name' => 'sometimes|string|max:255',
-        'description' => 'nullable|string',
-        'price_per_hour' => 'sometimes|integer|min:0',
-        'address' => 'sometimes|string|max:255',
-        'lat' => 'sometimes|numeric|between:-90,90',
-        'lng' => 'sometimes|numeric|between:-180,180',
-        'amenities' => 'nullable|array',
-        'amenities.*' => 'string',
-        'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
-    ]);
-
-    if ($request->hasFile('image')) {
-        if ($place->image && Storage::disk('public')->exists($place->image)) {
-            Storage::disk('public')->delete($place->image);
+        if (!$place) {
+            return response()->json(['message' => 'Place not found'], 404);
         }
 
-        $validated['image'] = $request->file('image')->store('places', 'public');
+        $validated = $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'description' => 'nullable|string',
+            'price_per_hour' => 'sometimes|integer|min:0',
+            'address' => 'sometimes|string|max:255',
+            'lat' => 'sometimes|numeric|between:-90,90',
+            'lng' => 'sometimes|numeric|between:-180,180',
+            'amenities' => 'nullable|array',
+            'amenities.*' => 'string',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
+        ]);
+
+        if ($request->hasFile('image')) {
+            if ($place->image && Storage::disk('public')->exists($place->image)) {
+                Storage::disk('public')->delete($place->image);
+            }
+
+            $validated['image'] = $request->file('image')->store('places', 'public');
+        }
+
+        $place->update($validated);
+
+        return response()->json([
+            'data' => $place
+        ]);
     }
-
-    $place->update($validated);
-
-    return response()->json([
-        'data' => $place
-    ]);
-}
-
-
-
 
     /**
      * حذف مكان
      * DELETE /api/places/{id}
      */
     public function destroy($id)
-{
-    $place = Place::find($id);
+    {
+        $place = Place::find($id);
 
-    if (!$place) {
-        return response()->json(['message' => 'Place not found'], 404);
+        if (!$place) {
+            return response()->json(['message' => 'Place not found'], 404);
+        }
+
+        $place->delete();
+
+        return response()->json(['message' => 'Deleted']);
     }
-
-    $place->delete();
-
-    return response()->json(['message' => 'Deleted']);
-}
-
 }

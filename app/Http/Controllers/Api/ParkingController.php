@@ -13,9 +13,20 @@ class ParkingController extends Controller
     // عرض الركنات لمكان
     public function index(Place $place)
 {
-    return SlotResource::collection(
-        $place->parkingSpots
-    );
+    // Fetch all parking spots for this place
+    $parkingSpots = $place->parkingSpots;
+    
+    // Debugging: Check if we have any spots
+    if ($parkingSpots->isEmpty()) {
+        return response()->json([
+            'data' => [],
+            'message' => 'No parking spots found for this garage',
+            'garage_id' => $place->id,
+            'garage_name' => $place->name
+        ], 200);
+    }
+    
+    return SlotResource::collection($parkingSpots);
 }
 
     // إضافة ركنة

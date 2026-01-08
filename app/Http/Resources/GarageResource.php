@@ -14,15 +14,28 @@ class GarageResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        // Handle image URL - check if external or local
+        $imageUrl = null;
+        if ($this->image) {
+            // If it's already an external URL (starts with http/https), use as-is
+            if (str_starts_with($this->image, 'http://') || str_starts_with($this->image, 'https://')) {
+                $imageUrl = $this->image;
+            } else {
+                // Local file - prepend storage path
+                $imageUrl = url('storage/' . $this->image);
+            }
+        }
+
         return [
             'id' => $this->id,
             'name' => $this->name,
-            'image' => $this->image
-                ? 'http://localhost:8000/storage/'. $this->image
-                : null,
+            'image' => $imageUrl,
             'description' => $this->description,
 
             'pricePerHour' => (float) $this->price_per_hour,
+
+            'availableSlots' => $this->available_slots_count ?? 0,
+            'totalSlots' => $this->total_slots_count ?? 0,
 
             'location' => [
                 'address' => $this->address,

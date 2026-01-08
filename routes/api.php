@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PlaceController;
-use App\Http\Controllers\api\BookingController;
+use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\ParkingController;
 use App\Http\Controllers\Api\ProfileController;
 
@@ -25,8 +25,8 @@ Route::post('/auth-access-token' , [AuthController::class , 'store']);
  // routes/api.php
 Route::prefix('/garages')->group(function () {
     Route::get('/', [PlaceController::class, 'index']);
-    Route::get('/{id}', [PlaceController::class, 'shaw']);
-    Route::get('/search', [PlaceController::class, 'searchByName']); // البحث بالاسم
+    Route::get('/search', [PlaceController::class, 'searchByName']); // البحث بالاسم - MUST be before /{id}
+    Route::get('/{id}', [PlaceController::class, 'show']);
     Route::post('/', [PlaceController::class, 'store']);
 });
 Route::prefix('garages/{place}')->group(function () {
@@ -49,9 +49,11 @@ Route::prefix('garages/{place}')->group(function () {
 
 Route::prefix('bookings')->group(function () {
     Route::get('/', [BookingController::class, 'index']);
+    Route::post('/pay', [BookingController::class, 'store']); // Must be before /{id} route
+    Route::post('/', [BookingController::class, 'store']);
+    Route::put('/{id}/end', [BookingController::class, 'endBooking']); // Must be before /{id} route
+    Route::get('/{id}', [BookingController::class, 'show']);
 });
-  //  pay
-Route::post('/bookings/pay', [BookingController::class, 'payAndBook']);
 
 
 Route::get('/users/{user}/bookings', [BookingController::class, 'index']);
